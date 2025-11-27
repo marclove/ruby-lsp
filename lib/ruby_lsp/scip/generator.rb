@@ -4,7 +4,7 @@
 module RubyLsp
   module SCIP
     # Generates SCIP output for a Ruby project by leveraging the existing RubyIndexer.
-    # SCIP (Source Code Intelligence Protocol) is a JSON format used by Sourcegraph
+    # SCIP (Source Code Intelligence Protocol) is a protobuf format used by Sourcegraph
     # for code intelligence features like definitions, references, and hover documentation.
     class Generator
       #: String
@@ -20,7 +20,7 @@ module RubyLsp
         @local_symbol_counter = 0 #: Integer
       end
 
-      # Generates SCIP output for the entire workspace
+      # Generates SCIP protobuf output for the entire workspace
       #: -> void
       def generate
         # Configure and run the indexer
@@ -28,19 +28,21 @@ module RubyLsp
         uris = collect_indexable_uris
 
         # Build all documents
-        documents = [] #: Array[Hash[Symbol, untyped]]
+        documents = [] #: Array[Proto::Document]
         uris.each do |uri|
           document = process_file(uri)
           documents << document if document
         end
 
         # Build the final SCIP index
-        scip_index = {
+        scip_index = Proto::Index.new(
           metadata: build_metadata,
           documents: documents,
-        }
+        )
 
-        @output.puts(JSON.generate(scip_index))
+        # Write protobuf binary output
+        @output.binmode if @output.respond_to?(:binmode)
+        @output.write(scip_index.encode)
       end
 
       private
@@ -62,18 +64,18 @@ module RubyLsp
         uris
       end
 
-      # Builds the SCIP metadata object
-      #: -> Hash[Symbol, untyped]
+      # Builds the SCIP metadata protobuf message
+      #: -> Proto::Metadata
       def build_metadata
-        {
-          version: SCIP::PROTOCOL_VERSION,
-          tool_info: {
+        Proto::Metadata.new(
+          version: Proto::ProtocolVersion::UNSPECIFIED,
+          tool_info: Proto::ToolInfo.new(
             name: "ruby-lsp",
             version: RubyLsp::VERSION,
-          },
+          ),
           project_root: "file://#{@workspace_path}",
-          text_document_encoding: 1, # UTF8
-        }
+          text_document_encoding: Proto::TextEncoding::UTF8,
+        )
       end
 
       # Generates the next local symbol ID
@@ -84,7 +86,7 @@ module RubyLsp
       end
 
       # Processes a single file and returns its SCIP document
-      #: (URI::Generic uri) -> Hash[Symbol, untyped]?
+      #: (URI::Generic uri) -> Proto::Document?
       def process_file(uri)
         path = uri.full_path
         return unless path && File.exist?(path)
@@ -98,8 +100,8 @@ module RubyLsp
         return unless entries
 
         # Build occurrences and symbols
-        occurrences = [] #: Array[Hash[Symbol, untyped]]
-        symbols = [] #: Array[Hash[Symbol, untyped]]
+        occurrences = [] #: Array[Proto::Occurrence]
+        symbols = [] #: Array[Proto::SymbolInformation]
 
         entries.each do |entry|
           symbol_string = build_symbol_string(entry)
@@ -113,13 +115,13 @@ module RubyLsp
         # Calculate relative path from workspace root
         relative_path = path.delete_prefix(@workspace_path).delete_prefix("/")
 
-        {
+        Proto::Document.new(
           language: "Ruby",
           relative_path: relative_path,
           occurrences: occurrences,
           symbols: symbols,
-          position_encoding: 2, # UTF16CodeUnitOffsetFromLineStart
-        }
+          position_encoding: Proto::PositionEncoding::UTF16_CODE_UNIT,
+        )
       end
 
       # Builds a SCIP symbol string for an entry
@@ -174,8 +176,8 @@ module RubyLsp
         end
       end
 
-      # Builds a SCIP occurrence for an entry
-      #: (RubyIndexer::Entry entry, String symbol) -> Hash[Symbol, untyped]?
+      # Builds a SCIP occurrence protobuf message for an entry
+      #: (RubyIndexer::Entry entry, String symbol) -> Proto::Occurrence?
       def build_occurrence(entry, symbol)
         location = entry.location
 
@@ -192,12 +194,12 @@ module RubyLsp
         end
 
         # Build occurrence with definition role
-        {
+        Proto::Occurrence.new(
           range: range,
           symbol: symbol,
-          symbol_roles: symbol_roles(entry), # Definition role
+          symbol_roles: symbol_roles(entry),
           syntax_kind: syntax_kind(entry),
-        }
+        )
       end
 
       # Determines the symbol roles for an entry
@@ -219,38 +221,34 @@ module RubyLsp
       def syntax_kind(entry)
         case entry
         when RubyIndexer::Entry::Method
-          15 # IdentifierFunction
+          Proto::SyntaxKind::IDENTIFIER_FUNCTION
         when RubyIndexer::Entry::Class
-          19 # IdentifierType
+          Proto::SyntaxKind::IDENTIFIER_TYPE
         when RubyIndexer::Entry::Module
-          14 # IdentifierNamespace
+          Proto::SyntaxKind::IDENTIFIER_NAMESPACE
         when RubyIndexer::Entry::Constant
-          8  # IdentifierConstant (using generic identifier)
+          Proto::SyntaxKind::IDENTIFIER_CONSTANT
         when RubyIndexer::Entry::Accessor
-          15 # IdentifierFunction
+          Proto::SyntaxKind::IDENTIFIER_FUNCTION
         else
-          0  # UnspecifiedSyntaxKind
+          Proto::SyntaxKind::UNSPECIFIED
         end
       end
 
-      # Builds symbol information for an entry
-      #: (RubyIndexer::Entry entry, String symbol) -> Hash[Symbol, untyped]?
+      # Builds symbol information protobuf message for an entry
+      #: (RubyIndexer::Entry entry, String symbol) -> Proto::SymbolInformation?
       def build_symbol_information(entry, symbol)
         return unless definition_entry?(entry)
 
-        info = {
+        docs = generate_documentation(entry)
+        documentation = docs ? [docs] : []
+
+        Proto::SymbolInformation.new(
           symbol: symbol,
           kind: symbol_kind(entry),
-        } #: Hash[Symbol, untyped]
-
-        # Add documentation if available
-        docs = generate_documentation(entry)
-        info[:documentation] = [docs] if docs
-
-        # Add display name
-        info[:display_name] = entry.name.split("::").last
-
-        info
+          documentation: documentation,
+          display_name: entry.name.split("::").last || entry.name,
+        )
       end
 
       # Checks if an entry is a definition
@@ -270,17 +268,17 @@ module RubyLsp
       def symbol_kind(entry)
         case entry
         when RubyIndexer::Entry::Method
-          26 # Method
+          Proto::SymbolKind::METHOD
         when RubyIndexer::Entry::Class
-          7  # Class
+          Proto::SymbolKind::CLASS
         when RubyIndexer::Entry::Module
-          29 # Module
+          Proto::SymbolKind::MODULE
         when RubyIndexer::Entry::Constant
-          8  # Constant
+          Proto::SymbolKind::CONSTANT
         when RubyIndexer::Entry::Accessor
-          72 # Accessor
+          Proto::SymbolKind::ACCESSOR
         else
-          0  # UnspecifiedKind
+          Proto::SymbolKind::UNSPECIFIED
         end
       end
 

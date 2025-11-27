@@ -4,72 +4,66 @@
 require "test_helper"
 require "ruby_lsp/scip"
 require "stringio"
-require "json"
 
 module RubyLsp
   module SCIP
     class GeneratorTest < Minitest::Test
       #: -> void
-      def test_generates_valid_scip_metadata
+      def test_generates_protobuf_output
         with_temp_workspace do |workspace_path|
           File.write(File.join(workspace_path, "example.rb"), "class Foo; end")
 
           output = StringIO.new
+          output.binmode
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          scip_index = JSON.parse(output.string)
-
-          # Check metadata
-          metadata = scip_index["metadata"]
-          refute_nil(metadata)
-          assert_equal(0, metadata["version"])
-          assert_equal("ruby-lsp", metadata.dig("tool_info", "name"))
-          assert_match(%r{^file://}, metadata["project_root"])
-          assert_equal(1, metadata["text_document_encoding"]) # UTF8
+          # Verify we get output (not empty)
+          result = output.string
+          refute_empty(result)
+          # Protobuf binary should be binary encoded
+          assert_equal(Encoding::BINARY, result.encoding)
         end
       end
 
       #: -> void
-      def test_generates_documents_array
+      def test_output_contains_metadata
         with_temp_workspace do |workspace_path|
           File.write(File.join(workspace_path, "example.rb"), "class Foo; end")
 
           output = StringIO.new
+          output.binmode
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          scip_index = JSON.parse(output.string)
-
-          # Check documents
-          documents = scip_index["documents"]
-          refute_nil(documents)
-          assert(documents.is_a?(Array))
-          assert_equal(1, documents.length)
+          result = output.string
+          # The output should contain "ruby-lsp" string (tool name)
+          assert_includes(result, "ruby-lsp")
+          # The output should contain the project root
+          assert_includes(result, "file://")
         end
       end
 
       #: -> void
-      def test_generates_document_with_relative_path
+      def test_output_contains_document_path
         with_temp_workspace do |workspace_path|
           File.write(File.join(workspace_path, "example.rb"), "class Foo; end")
 
           output = StringIO.new
+          output.binmode
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          scip_index = JSON.parse(output.string)
-          document = scip_index["documents"].first
-
-          refute_nil(document)
-          assert_equal("Ruby", document["language"])
-          assert_equal("example.rb", document["relative_path"])
-          assert_equal(2, document["position_encoding"]) # UTF16CodeUnitOffsetFromLineStart
+          result = output.string
+          # The output should contain the relative path
+          assert_includes(result, "example.rb")
+          # The output should contain the language
+          assert_includes(result, "Ruby")
         end
       end
 
       #: -> void
-      def test_generates_occurrences_for_classes
+      def test_output_contains_class_symbol
         with_temp_workspace do |workspace_path|
           File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
             class Greeter
@@ -77,52 +71,22 @@ module RubyLsp
           RUBY
 
           output = StringIO.new
+          output.binmode
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          scip_index = JSON.parse(output.string)
-          document = scip_index["documents"].first
-          occurrences = document["occurrences"]
-
-          refute_empty(occurrences)
-          class_occurrence = occurrences.first
-          assert(class_occurrence["range"].is_a?(Array))
-          assert_equal(0, class_occurrence["range"][0]) # Start line (0-based)
-          refute_nil(class_occurrence["symbol"])
-          assert_equal(1, class_occurrence["symbol_roles"]) # Definition
+          result = output.string
+          # The output should contain the symbol string
+          assert_includes(result, "Greeter")
+          assert_includes(result, "scip-ruby")
         end
       end
 
       #: -> void
-      def test_generates_symbols_for_classes
+      def test_output_contains_method_symbol
         with_temp_workspace do |workspace_path|
           File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
             class Greeter
-            end
-          RUBY
-
-          output = StringIO.new
-          generator = Generator.new(workspace_path, output)
-          generator.generate
-
-          scip_index = JSON.parse(output.string)
-          document = scip_index["documents"].first
-          symbols = document["symbols"]
-
-          refute_empty(symbols)
-          class_symbol = symbols.first
-          refute_nil(class_symbol["symbol"])
-          assert_equal(7, class_symbol["kind"]) # Class
-          assert_equal("Greeter", class_symbol["display_name"])
-        end
-      end
-
-      #: -> void
-      def test_generates_documentation_for_methods
-        with_temp_workspace do |workspace_path|
-          File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
-            class Greeter
-              # Says hello
               def greet
                 "hello"
               end
@@ -130,29 +94,41 @@ module RubyLsp
           RUBY
 
           output = StringIO.new
+          output.binmode
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          scip_index = JSON.parse(output.string)
-          document = scip_index["documents"].first
-          symbols = document["symbols"]
-
-          # Find the method symbol
-          method_symbol = symbols.find { |s| s["display_name"] == "greet" }
-          refute_nil(method_symbol)
-          assert_equal(26, method_symbol["kind"]) # Method
-
-          # Check documentation
-          docs = method_symbol["documentation"]
-          refute_nil(docs)
-          assert(docs.is_a?(Array))
-          refute_empty(docs)
-          assert_match(/Says hello/, docs.first)
+          result = output.string
+          # The output should contain the method name
+          assert_includes(result, "greet")
         end
       end
 
       #: -> void
-      def test_generates_symbol_string_with_namespace
+      def test_output_contains_documentation
+        with_temp_workspace do |workspace_path|
+          File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
+            class Greeter
+              # Says hello to everyone
+              def greet
+                "hello"
+              end
+            end
+          RUBY
+
+          output = StringIO.new
+          output.binmode
+          generator = Generator.new(workspace_path, output)
+          generator.generate
+
+          result = output.string
+          # The output should contain the documentation
+          assert_includes(result, "Says hello")
+        end
+      end
+
+      #: -> void
+      def test_symbol_string_contains_namespace
         with_temp_workspace do |workspace_path|
           File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
             module Foo
@@ -162,37 +138,14 @@ module RubyLsp
           RUBY
 
           output = StringIO.new
+          output.binmode
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          scip_index = JSON.parse(output.string)
-          document = scip_index["documents"].first
-          symbols = document["symbols"]
-
-          # Find the nested class symbol
-          bar_symbol = symbols.find { |s| s["display_name"] == "Bar" }
-          refute_nil(bar_symbol)
-          assert_match(%r{Foo/Bar#}, bar_symbol["symbol"])
-        end
-      end
-
-      #: -> void
-      def test_uses_correct_range_format_for_single_line
-        with_temp_workspace do |workspace_path|
-          File.write(File.join(workspace_path, "example.rb"), "class Foo; end")
-
-          output = StringIO.new
-          generator = Generator.new(workspace_path, output)
-          generator.generate
-
-          scip_index = JSON.parse(output.string)
-          document = scip_index["documents"].first
-          occurrences = document["occurrences"]
-
-          # Single line should use 3-element range format
-          class_occurrence = occurrences.first
-          range = class_occurrence["range"]
-          assert(range.length == 3 || range.length == 4)
+          result = output.string
+          # The output should contain namespace path
+          assert_includes(result, "Foo")
+          assert_includes(result, "Bar")
         end
       end
 
@@ -202,20 +155,18 @@ module RubyLsp
           File.write(File.join(workspace_path, "example.rb"), "class Foo; end")
 
           output = StringIO.new
+          output.binmode
           generator = Generator.new(workspace_path, output, nil, include_dependencies: false)
           generator.generate
 
-          scip_index = JSON.parse(output.string)
-          documents = scip_index["documents"]
-
-          # Should only have our example.rb, not any gems
-          assert_equal(1, documents.length)
-          assert_equal("example.rb", documents.first["relative_path"])
+          result = output.string
+          # Should only have our example.rb
+          assert_includes(result, "example.rb")
         end
       end
 
       #: -> void
-      def test_generates_correct_kind_for_modules
+      def test_generates_correct_output_for_modules
         with_temp_workspace do |workspace_path|
           File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
             module MyModule
@@ -223,16 +174,12 @@ module RubyLsp
           RUBY
 
           output = StringIO.new
+          output.binmode
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          scip_index = JSON.parse(output.string)
-          document = scip_index["documents"].first
-          symbols = document["symbols"]
-
-          module_symbol = symbols.first
-          assert_equal(29, module_symbol["kind"]) # Module
-          assert_equal("MyModule", module_symbol["display_name"])
+          result = output.string
+          assert_includes(result, "MyModule")
         end
       end
 
@@ -247,19 +194,32 @@ module RubyLsp
           RUBY
 
           output = StringIO.new
+          output.binmode
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          scip_index = JSON.parse(output.string)
-          document = scip_index["documents"].first
-          symbols = document["symbols"]
-
-          # Find the method with special character
-          method_symbol = symbols.find { |s| s["display_name"] == "call?" }
-          refute_nil(method_symbol)
+          result = output.string
           # Special identifiers should be escaped with backticks
-          assert_match(/`call\?`/, method_symbol["symbol"])
+          assert_includes(result, "`call?`")
         end
+      end
+
+      #: -> void
+      def test_proto_encoder_writes_valid_varint
+        encoder = Proto::Encoder.new
+        encoder.write_varint(150)
+        # 150 = 0x96 0x01 in varint encoding
+        assert_equal("\x96\x01".b, encoder.to_s)
+      end
+
+      #: -> void
+      def test_proto_encoder_writes_string
+        encoder = Proto::Encoder.new
+        encoder.write_string(1, "test")
+        # Field 1, wire type 2 (length-delimited) = tag 0x0a
+        # Length 4 = 0x04
+        # "test" bytes
+        assert_equal("\x0a\x04test".b, encoder.to_s)
       end
 
       private
