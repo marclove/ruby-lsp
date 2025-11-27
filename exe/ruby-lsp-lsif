@@ -3,7 +3,6 @@
 
 require "optparse"
 
-original_args = ARGV.dup
 options = {
   output: nil,
   workspace: Dir.pwd,
@@ -21,7 +20,7 @@ parser = OptionParser.new do |opts|
   end
 
   opts.on("-o", "--output FILE", "Write LSIF output to FILE (default: stdout)") do |file|
-    options[:output] = file
+    options[:output] = File.expand_path(file)
   end
 
   opts.on("-w", "--workspace DIR", "Workspace directory to index (default: current directory)") do |dir|
@@ -70,7 +69,13 @@ if ENV["BUNDLE_GEMFILE"].nil?
     base_command << " _#{env["BUNDLER_VERSION"]}_"
   end
 
-  exit exec(env, "#{base_command} exec ruby-lsp-lsif #{original_args.join(" ")}".strip)
+  # Reconstruct args with absolute paths to avoid issues with relative paths during re-execution
+  reconstructed_args = []
+  reconstructed_args << "-w" << options[:workspace]
+  reconstructed_args << "-o" << options[:output] if options[:output]
+  reconstructed_args << "--include-dependencies" if options[:include_dependencies]
+
+  exit exec(env, "#{base_command} exec ruby-lsp-lsif #{reconstructed_args.join(" ")}".strip)
 end
 
 $LOAD_PATH.unshift(File.expand_path("../lib", __dir__))
