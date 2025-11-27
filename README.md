@@ -23,9 +23,59 @@ For other editors, please refer to the [EDITORS](https://shopify.github.io/ruby-
 
 To learn more about Ruby LSP, please refer to the official [documentation](https://shopify.github.io/ruby-lsp) for [supported features](https://shopify.github.io/ruby-lsp#features).
 
+## LSIF Generator
+
+Ruby LSP includes an LSIF (Language Server Index Format) generator that pre-computes code navigation data for offline use. This is useful for:
+
+- **Code search platforms** like Sourcegraph or GitHub Code Search
+- **Static documentation** with code navigation features
+- **CI/CD pipelines** that need code intelligence without running a language server
+
+### Usage
+
+Generate LSIF output for your project:
+
+```bash
+# Basic usage - outputs to stdout
+ruby-lsp-lsif
+
+# Write output to a file
+ruby-lsp-lsif -o project.lsif
+
+# Index a specific workspace directory
+ruby-lsp-lsif -w /path/to/project -o output.lsif
+
+# Include gem dependencies in the index
+ruby-lsp-lsif --include-dependencies -o output.lsif
+```
+
+The LSIF generator automatically uses the Composed Bundle mechanism to access your project's dependencies, ensuring accurate indexing. No additional setup is required - just run it in your project directory.
+
+For more information about LSIF, see the [LSIF specification](https://microsoft.github.io/language-server-protocol/specifications/lsif/0.6.0/specification/).
+
+#### Install Locally
+
+This makes your fork available as the ruby-lsp gem on your system:
+
+**Build and install your fork**
+
+```sh
+cd /workspace/ruby-lsp
+gem build ruby-lsp.gemspec
+gem install ruby-lsp-*.gem
+
+# 2. Generate LSIF for the Rails app
+ruby-lsp-lsif -w ../my-ruby-gem -o ../my-ruby-gem/index.lsif
+
+# Clean up the built gem file (optional)
+rm ruby-lsp-*.gem
+```
+
+The installed ruby-lsp-lsif executable will now use your fork's code.
+
 ## Contributing
 
-Bug reports and pull requests are welcome on GitHub at https://github.com/Shopify/ruby-lsp.  This project is intended to
+Bug reports and pull requests are welcome on GitHub at https://github.com/Shopify/ruby-lsp. This project is intended to
 be a safe, welcoming space for collaboration, and contributors are expected to adhere to the [Contributor
 Covenant](CODE_OF_CONDUCT.md) code of conduct.
 
