@@ -9,6 +9,7 @@
 /**/.dev/
 /docs
 /sorbet/cache
+/vendor/bundle
 
 vscode/out
 vscode/dist
