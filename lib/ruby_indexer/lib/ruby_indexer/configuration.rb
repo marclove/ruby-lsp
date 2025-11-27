@@ -37,9 +37,7 @@ module RubyIndexer
         @excluded_patterns << "#{glob}/**/*.rb"
       end
 
-      # We start the included patterns with only the non excluded directories so that we can avoid paying the price of
-      # traversing large directories that don't include Ruby files like `node_modules`
-      @included_patterns = ["{#{top_level_directories.join(",")}}/**/*.rb", "*.rb"] #: Array[String]
+      @included_patterns = [] #: Array[String]
       @excluded_magic_comments = [
         "frozen_string_literal:",
         "typed:",
@@ -55,6 +53,13 @@ module RubyIndexer
       ] #: Array[String]
     end
 
+    #: -> Array[String]
+    def included_patterns
+      # We start the included patterns with only the non excluded directories so that we can avoid paying the price of
+      # traversing large directories that don't include Ruby files like `node_modules`
+      @included_patterns.empty? ? ["{#{top_level_directories.join(",")}}/**/*.rb", "*.rb"] : @included_patterns
+    end
+
     #: -> Array[URI::Generic]
     def indexable_uris
       excluded_gems = @excluded_gems - @included_gems
@@ -65,7 +70,7 @@ module RubyIndexer
 
       flags = File::FNM_PATHNAME | File::FNM_EXTGLOB
 
-      uris = @included_patterns.flat_map do |pattern|
+      uris = included_patterns.flat_map do |pattern|
         load_path_entry = nil #: String?
 
         Dir.glob(File.join(@workspace_path, pattern), flags).map! do |path|
@@ -264,7 +269,7 @@ module RubyIndexer
     def top_level_directories
       excluded_directories = ["tmp", "node_modules", "sorbet"]
 
-      Dir.glob("#{Dir.pwd}/*").filter_map do |path|
+      Dir.glob("#{@workspace_path}/*").filter_map do |path|
         dir_name = File.basename(path)
         next unless File.directory?(path) && !excluded_directories.include?(dir_name)
 
