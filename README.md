@@ -73,6 +73,32 @@ rm ruby-lsp-*.gem
 
 The installed ruby-lsp-lsif executable will now use your fork's code.
 
+## SCIP Generator
+
+Ruby LSP also includes a SCIP (Source Code Intelligence Protocol) generator. SCIP is a code intelligence format used by Sourcegraph for cross-repository navigation and code intelligence features.
+
+### Usage
+
+Generate SCIP output for your project:
+
+```bash
+# Basic usage - outputs to stdout
+ruby-lsp-scip
+
+# Write output to a file
+ruby-lsp-scip -o project.scip.json
+
+# Index a specific workspace directory
+ruby-lsp-scip -w /path/to/project -o output.scip.json
+
+# Include gem dependencies in the index
+ruby-lsp-scip --include-dependencies -o output.scip.json
+```
+
+The SCIP generator automatically uses the Composed Bundle mechanism to access your project's dependencies, ensuring accurate indexing. No additional setup is required - just run it in your project directory.
+
+For more information about SCIP, see the [SCIP repository](https://github.com/sourcegraph/scip).
+
 ## Contributing
 
 Bug reports and pull requests are welcome on GitHub at https://github.com/Shopify/ruby-lsp. This project is intended to
