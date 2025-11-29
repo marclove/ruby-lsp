@@ -248,7 +248,46 @@ module RubyLsp
           kind: symbol_kind(entry),
           documentation: documentation,
           display_name: entry.name.split("::").last || entry.name,
+          signature_documentation: build_signature_documentation(entry),
         )
+      end
+
+      # Builds a signature documentation Document for an entry
+      # This provides the type signature as displayed in API documentation or hover tooltips
+      #: (RubyIndexer::Entry entry) -> untyped
+      def build_signature_documentation(entry)
+        signature = generate_signature(entry)
+        return unless signature
+
+        Proto::Document.new(
+          language: "ruby",
+          text: signature,
+        )
+      end
+
+      # Generates the type signature string for an entry
+      #: (RubyIndexer::Entry entry) -> String?
+      def generate_signature(entry)
+        case entry
+        when RubyIndexer::Entry::Method
+          visibility_prefix = entry.visibility == :public ? "" : "#{entry.visibility} "
+          first_signature = entry.signatures.first
+          params = first_signature ? "(#{first_signature.format})" : ""
+          "#{visibility_prefix}def #{entry.name}#{params}"
+        when RubyIndexer::Entry::Accessor
+          # Accessors are like methods
+          first_signature = entry.signatures.first
+          params = first_signature ? "(#{first_signature.format})" : ""
+          "def #{entry.name}#{params}"
+        when RubyIndexer::Entry::Class
+          sig = "class #{entry.name}"
+          sig += " < #{entry.parent_class}" if entry.parent_class
+          sig
+        when RubyIndexer::Entry::Module
+          "module #{entry.name}"
+        when RubyIndexer::Entry::Constant
+          entry.name
+        end
       end
 
       # Checks if an entry is a definition
@@ -307,7 +346,7 @@ module RubyLsp
           content << "\n\n#{overloads}" unless overloads.empty?
 
           # Add source file location
-          content << "\n\n**Defined in:** `#{entry.file_name}`"
+          content << "\n\n**Defined in:** `#{relative_path_for(entry)}`"
 
           # Add documentation comments
           content << "\n\n#{entry.comments}" unless entry.comments.empty?
@@ -323,7 +362,7 @@ module RubyLsp
           content << mixin_info unless mixin_info.empty?
 
           # Add source file location
-          content << "\n\n**Defined in:** `#{entry.file_name}`"
+          content << "\n\n**Defined in:** `#{relative_path_for(entry)}`"
 
           # Add documentation comments
           content << "\n\n#{entry.comments}" unless entry.comments.empty?
@@ -337,7 +376,7 @@ module RubyLsp
           content << mixin_info unless mixin_info.empty?
 
           # Add source file location
-          content << "\n\n**Defined in:** `#{entry.file_name}`"
+          content << "\n\n**Defined in:** `#{relative_path_for(entry)}`"
 
           # Add documentation comments
           content << "\n\n#{entry.comments}" unless entry.comments.empty?
@@ -345,10 +384,19 @@ module RubyLsp
           content
         when RubyIndexer::Entry::Constant
           content = +"```ruby\n#{entry.name}\n```"
-          content << "\n\n**Defined in:** `#{entry.file_name}`"
+          content << "\n\n**Defined in:** `#{relative_path_for(entry)}`"
           content << "\n\n#{entry.comments}" unless entry.comments.empty?
           content
         end
+      end
+
+      # Returns the relative file path for an entry from the workspace root
+      #: (RubyIndexer::Entry entry) -> String
+      def relative_path_for(entry)
+        full_path = entry.file_path
+        return entry.file_name unless full_path
+
+        full_path.delete_prefix(@workspace_path).delete_prefix("/")
       end
 
       # Formats mixin operations (includes, prepends, extends) for documentation

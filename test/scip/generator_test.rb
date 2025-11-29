@@ -331,6 +331,70 @@ module RubyLsp
         end
       end
 
+      #: -> void
+      def test_signature_documentation_for_method
+        with_temp_workspace do |workspace_path|
+          File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
+            class Greeter
+              def greet(name, greeting: "Hello")
+                "\#{greeting}, \#{name}"
+              end
+            end
+          RUBY
+
+          output = StringIO.new
+          output.binmode
+          generator = Generator.new(workspace_path, output)
+          generator.generate
+
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          # Find the method symbol
+          symbol = document.symbols.find { |s| s.display_name == "greet" }
+          refute_nil(symbol)
+
+          # Check signature_documentation
+          sig_doc = symbol.signature_documentation
+          refute_nil(sig_doc)
+          assert_equal("ruby", sig_doc.language)
+          assert_includes(sig_doc.text, "def greet")
+          assert_includes(sig_doc.text, "name")
+          assert_includes(sig_doc.text, "greeting:")
+        end
+      end
+
+      #: -> void
+      def test_signature_documentation_for_class
+        with_temp_workspace do |workspace_path|
+          File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
+            class Animal
+            end
+
+            class Dog < Animal
+            end
+          RUBY
+
+          output = StringIO.new
+          output.binmode
+          generator = Generator.new(workspace_path, output)
+          generator.generate
+
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          # Find the Dog class symbol
+          symbol = document.symbols.find { |s| s.display_name == "Dog" }
+          refute_nil(symbol)
+
+          # Check signature_documentation
+          sig_doc = symbol.signature_documentation
+          refute_nil(sig_doc)
+          assert_equal("ruby", sig_doc.language)
+          assert_equal("class Dog < Animal", sig_doc.text)
+        end
+      end
+
       private
 
       #: { (String) -> void } -> void
