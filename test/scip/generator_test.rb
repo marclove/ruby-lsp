@@ -260,6 +260,77 @@ module RubyLsp
         end
       end
 
+      #: -> void
+      def test_method_documentation_includes_owner_and_file
+        with_temp_workspace do |workspace_path|
+          File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
+            class Greeter
+              def greet(name)
+                "Hello, \#{name}"
+              end
+            end
+          RUBY
+
+          output = StringIO.new
+          output.binmode
+          generator = Generator.new(workspace_path, output)
+          generator.generate
+
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          # Find the method symbol
+          symbol = document.symbols.find { |s| s.display_name == "greet" }
+          refute_nil(symbol)
+          refute_empty(symbol.documentation)
+          doc = symbol.documentation.first
+
+          # Should include owner class
+          assert_includes(doc, "Greeter#greet")
+          # Should include file location
+          assert_includes(doc, "Defined in:")
+          assert_includes(doc, "example.rb")
+        end
+      end
+
+      #: -> void
+      def test_class_documentation_includes_mixins
+        with_temp_workspace do |workspace_path|
+          File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
+            module Comparable
+            end
+
+            module Enumerable
+            end
+
+            class MyCollection
+              include Enumerable
+              prepend Comparable
+            end
+          RUBY
+
+          output = StringIO.new
+          output.binmode
+          generator = Generator.new(workspace_path, output)
+          generator.generate
+
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          # Find the class symbol
+          symbol = document.symbols.find { |s| s.display_name == "MyCollection" }
+          refute_nil(symbol)
+          refute_empty(symbol.documentation)
+          doc = symbol.documentation.first
+
+          # Should include mixin information
+          assert_includes(doc, "Includes:")
+          assert_includes(doc, "Enumerable")
+          assert_includes(doc, "Prepends:")
+          assert_includes(doc, "Comparable")
+        end
+      end
+
       private
 
       #: { (String) -> void } -> void

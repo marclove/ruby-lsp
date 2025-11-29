@@ -287,25 +287,93 @@ module RubyLsp
       def generate_documentation(entry)
         case entry
         when RubyIndexer::Entry::Method
-          signatures = entry.signatures.map { |sig| "(#{sig.format})" }.join("\n")
-          content = "```ruby\ndef #{entry.name}#{signatures.empty? ? "" : signatures}\n```"
-          content += "\n\n#{entry.comments}" unless entry.comments.empty?
+          content = +""
+
+          # Add visibility prefix if not public
+          visibility_prefix = entry.visibility == :public ? "" : "#{entry.visibility} "
+
+          # Build method signature with parameters
+          first_signature = entry.signatures.first
+          params = first_signature ? "(#{first_signature.format})" : ""
+
+          # Add owner class/module context if available
+          owner_prefix = entry.owner ? "#{entry.owner.name}#" : ""
+
+          # Build the code block with full method signature
+          content << "```ruby\n#{visibility_prefix}def #{owner_prefix}#{entry.name}#{params}\n```"
+
+          # Add overloads count if multiple signatures exist
+          overloads = entry.formatted_signatures
+          content << "\n\n#{overloads}" unless overloads.empty?
+
+          # Add source file location
+          content << "\n\n**Defined in:** `#{entry.file_name}`"
+
+          # Add documentation comments
+          content << "\n\n#{entry.comments}" unless entry.comments.empty?
+
           content
         when RubyIndexer::Entry::Class
-          content = "```ruby\nclass #{entry.name}"
-          content += " < #{entry.parent_class}" if entry.parent_class
-          content += "\n```"
-          content += "\n\n#{entry.comments}" unless entry.comments.empty?
+          content = +"```ruby\nclass #{entry.name}"
+          content << " < #{entry.parent_class}" if entry.parent_class
+          content << "\n```"
+
+          # Add mixin information (includes, prepends)
+          mixin_info = format_mixin_operations(entry)
+          content << mixin_info unless mixin_info.empty?
+
+          # Add source file location
+          content << "\n\n**Defined in:** `#{entry.file_name}`"
+
+          # Add documentation comments
+          content << "\n\n#{entry.comments}" unless entry.comments.empty?
+
           content
         when RubyIndexer::Entry::Module
-          content = "```ruby\nmodule #{entry.name}\n```"
-          content += "\n\n#{entry.comments}" unless entry.comments.empty?
+          content = +"```ruby\nmodule #{entry.name}\n```"
+
+          # Add mixin information (includes, prepends)
+          mixin_info = format_mixin_operations(entry)
+          content << mixin_info unless mixin_info.empty?
+
+          # Add source file location
+          content << "\n\n**Defined in:** `#{entry.file_name}`"
+
+          # Add documentation comments
+          content << "\n\n#{entry.comments}" unless entry.comments.empty?
+
           content
         when RubyIndexer::Entry::Constant
-          content = "```ruby\n#{entry.name}\n```"
-          content += "\n\n#{entry.comments}" unless entry.comments.empty?
+          content = +"```ruby\n#{entry.name}\n```"
+          content << "\n\n**Defined in:** `#{entry.file_name}`"
+          content << "\n\n#{entry.comments}" unless entry.comments.empty?
           content
         end
+      end
+
+      # Formats mixin operations (includes, prepends, extends) for documentation
+      #: (RubyIndexer::Entry::Namespace entry) -> String
+      def format_mixin_operations(entry)
+        operations = entry.mixin_operations
+        return "" if operations.empty?
+
+        includes = [] #: Array[String]
+        prepends = [] #: Array[String]
+
+        operations.each do |op|
+          case op
+          when RubyIndexer::Entry::Include
+            includes << op.module_name
+          when RubyIndexer::Entry::Prepend
+            prepends << op.module_name
+          end
+        end
+
+        parts = [] #: Array[String]
+        parts << "**Includes:** #{includes.join(", ")}" unless includes.empty?
+        parts << "**Prepends:** #{prepends.join(", ")}" unless prepends.empty?
+
+        parts.empty? ? "" : "\n\n#{parts.join("\n\n")}"
       end
     end
   end
