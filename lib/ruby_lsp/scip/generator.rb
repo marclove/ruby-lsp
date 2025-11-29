@@ -28,7 +28,7 @@ module RubyLsp
         uris = collect_indexable_uris
 
         # Build all documents
-        documents = [] #: Array[Proto::Document]
+        documents = [] #: Array[untyped]
         uris.each do |uri|
           document = process_file(uri)
           documents << document if document
@@ -42,7 +42,7 @@ module RubyLsp
 
         # Write protobuf binary output
         @output.binmode if @output.respond_to?(:binmode)
-        @output.write(scip_index.encode)
+        @output.write(Proto::Index.encode(scip_index))
       end
 
       private
@@ -65,16 +65,16 @@ module RubyLsp
       end
 
       # Builds the SCIP metadata protobuf message
-      #: -> Proto::Metadata
+      #: -> untyped
       def build_metadata
         Proto::Metadata.new(
-          version: Proto::ProtocolVersion::UNSPECIFIED,
+          version: :UnspecifiedProtocolVersion,
           tool_info: Proto::ToolInfo.new(
             name: "ruby-lsp",
             version: RubyLsp::VERSION,
           ),
           project_root: "file://#{@workspace_path}",
-          text_document_encoding: Proto::TextEncoding::UTF8,
+          text_document_encoding: :UTF8,
         )
       end
 
@@ -86,7 +86,7 @@ module RubyLsp
       end
 
       # Processes a single file and returns its SCIP document
-      #: (URI::Generic uri) -> Proto::Document?
+      #: (URI::Generic uri) -> untyped
       def process_file(uri)
         path = uri.full_path
         return unless path && File.exist?(path)
@@ -100,8 +100,8 @@ module RubyLsp
         return unless entries
 
         # Build occurrences and symbols
-        occurrences = [] #: Array[Proto::Occurrence]
-        symbols = [] #: Array[Proto::SymbolInformation]
+        occurrences = [] #: Array[untyped]
+        symbols = [] #: Array[untyped]
 
         entries.each do |entry|
           symbol_string = build_symbol_string(entry)
@@ -120,7 +120,7 @@ module RubyLsp
           relative_path: relative_path,
           occurrences: occurrences,
           symbols: symbols,
-          position_encoding: Proto::PositionEncoding::UTF16_CODE_UNIT,
+          position_encoding: :UTF16CodeUnitOffsetFromLineStart,
         )
       end
 
@@ -177,7 +177,7 @@ module RubyLsp
       end
 
       # Builds a SCIP occurrence protobuf message for an entry
-      #: (RubyIndexer::Entry entry, String symbol) -> Proto::Occurrence?
+      #: (RubyIndexer::Entry entry, String symbol) -> untyped
       def build_occurrence(entry, symbol)
         location = entry.location
 
@@ -217,26 +217,26 @@ module RubyLsp
       end
 
       # Determines the SCIP syntax kind for an entry
-      #: (RubyIndexer::Entry entry) -> Integer
+      #: (RubyIndexer::Entry entry) -> Symbol
       def syntax_kind(entry)
         case entry
         when RubyIndexer::Entry::Method
-          Proto::SyntaxKind::IDENTIFIER_FUNCTION
+          :IdentifierFunction
         when RubyIndexer::Entry::Class
-          Proto::SyntaxKind::IDENTIFIER_TYPE
+          :IdentifierType
         when RubyIndexer::Entry::Module
-          Proto::SyntaxKind::IDENTIFIER_NAMESPACE
+          :IdentifierNamespace
         when RubyIndexer::Entry::Constant
-          Proto::SyntaxKind::IDENTIFIER_CONSTANT
+          :IdentifierConstant
         when RubyIndexer::Entry::Accessor
-          Proto::SyntaxKind::IDENTIFIER_FUNCTION
+          :IdentifierFunction
         else
-          Proto::SyntaxKind::UNSPECIFIED
+          :UnspecifiedSyntaxKind
         end
       end
 
       # Builds symbol information protobuf message for an entry
-      #: (RubyIndexer::Entry entry, String symbol) -> Proto::SymbolInformation?
+      #: (RubyIndexer::Entry entry, String symbol) -> untyped
       def build_symbol_information(entry, symbol)
         return unless definition_entry?(entry)
 
@@ -264,21 +264,21 @@ module RubyLsp
       end
 
       # Determines the SCIP symbol kind for an entry
-      #: (RubyIndexer::Entry entry) -> Integer
+      #: (RubyIndexer::Entry entry) -> Symbol
       def symbol_kind(entry)
         case entry
         when RubyIndexer::Entry::Method
-          Proto::SymbolKind::METHOD
+          :Method
         when RubyIndexer::Entry::Class
-          Proto::SymbolKind::CLASS
+          :Class
         when RubyIndexer::Entry::Module
-          Proto::SymbolKind::MODULE
+          :Module
         when RubyIndexer::Entry::Constant
-          Proto::SymbolKind::CONSTANT
+          :Constant
         when RubyIndexer::Entry::Accessor
-          Proto::SymbolKind::ACCESSOR
+          :Accessor
         else
-          Proto::SymbolKind::UNSPECIFIED
+          :UnspecifiedKind
         end
       end
 

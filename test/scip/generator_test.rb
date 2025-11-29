@@ -1,4 +1,4 @@
-# typed: strict
+# typed: true
 # frozen_string_literal: true
 
 require "test_helper"
@@ -9,7 +9,7 @@ module RubyLsp
   module SCIP
     class GeneratorTest < Minitest::Test
       #: -> void
-      def test_generates_protobuf_output
+      def test_generates_valid_protobuf_output
         with_temp_workspace do |workspace_path|
           File.write(File.join(workspace_path, "example.rb"), "class Foo; end")
 
@@ -18,11 +18,14 @@ module RubyLsp
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          # Verify we get output (not empty)
+          # Verify we get valid protobuf output
           result = output.string
           refute_empty(result)
-          # Protobuf binary should be binary encoded
-          assert_equal(Encoding::BINARY, result.encoding)
+
+          # Decode the output using google-protobuf
+          index = Proto::Index.decode(result)
+          refute_nil(index)
+          refute_nil(index.metadata)
         end
       end
 
@@ -36,11 +39,11 @@ module RubyLsp
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          result = output.string
-          # The output should contain "ruby-lsp" string (tool name)
-          assert_includes(result, "ruby-lsp")
-          # The output should contain the project root
-          assert_includes(result, "file://")
+          index = Proto::Index.decode(output.string)
+          metadata = index.metadata
+          refute_nil(metadata)
+          assert_equal("ruby-lsp", metadata.tool_info.name)
+          assert_match(%r{^file://}, metadata.project_root)
         end
       end
 
@@ -54,11 +57,12 @@ module RubyLsp
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          result = output.string
-          # The output should contain the relative path
-          assert_includes(result, "example.rb")
-          # The output should contain the language
-          assert_includes(result, "Ruby")
+          index = Proto::Index.decode(output.string)
+          assert_equal(1, index.documents.length)
+
+          document = index.documents.first
+          assert_equal("example.rb", document.relative_path)
+          assert_equal("Ruby", document.language)
         end
       end
 
@@ -75,10 +79,14 @@ module RubyLsp
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          result = output.string
-          # The output should contain the symbol string
-          assert_includes(result, "Greeter")
-          assert_includes(result, "scip-ruby")
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          # Find the class symbol
+          symbol = document.symbols.find { |s| s.display_name == "Greeter" }
+          refute_nil(symbol)
+          assert_includes(symbol.symbol, "scip-ruby")
+          assert_includes(symbol.symbol, "Greeter")
         end
       end
 
@@ -98,9 +106,13 @@ module RubyLsp
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          result = output.string
-          # The output should contain the method name
-          assert_includes(result, "greet")
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          # Find the method symbol
+          symbol = document.symbols.find { |s| s.display_name == "greet" }
+          refute_nil(symbol)
+          assert_includes(symbol.symbol, "greet")
         end
       end
 
@@ -121,9 +133,14 @@ module RubyLsp
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          result = output.string
-          # The output should contain the documentation
-          assert_includes(result, "Says hello")
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          # Find the method symbol
+          symbol = document.symbols.find { |s| s.display_name == "greet" }
+          refute_nil(symbol)
+          refute_empty(symbol.documentation)
+          assert_includes(symbol.documentation.first, "Says hello")
         end
       end
 
@@ -142,10 +159,14 @@ module RubyLsp
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          result = output.string
-          # The output should contain namespace path
-          assert_includes(result, "Foo")
-          assert_includes(result, "Bar")
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          # Find the nested class symbol
+          symbol = document.symbols.find { |s| s.display_name == "Bar" }
+          refute_nil(symbol)
+          assert_includes(symbol.symbol, "Foo")
+          assert_includes(symbol.symbol, "Bar")
         end
       end
 
@@ -159,9 +180,10 @@ module RubyLsp
           generator = Generator.new(workspace_path, output, nil, include_dependencies: false)
           generator.generate
 
-          result = output.string
+          index = Proto::Index.decode(output.string)
           # Should only have our example.rb
-          assert_includes(result, "example.rb")
+          assert_equal(1, index.documents.length)
+          assert_equal("example.rb", index.documents.first.relative_path)
         end
       end
 
@@ -178,8 +200,12 @@ module RubyLsp
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          result = output.string
-          assert_includes(result, "MyModule")
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          symbol = document.symbols.find { |s| s.display_name == "MyModule" }
+          refute_nil(symbol)
+          assert_equal(:Module, symbol.kind)
         end
       end
 
@@ -198,28 +224,40 @@ module RubyLsp
           generator = Generator.new(workspace_path, output)
           generator.generate
 
-          result = output.string
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          # Find the method with special character
+          symbol = document.symbols.find { |s| s.display_name == "call?" }
+          refute_nil(symbol)
           # Special identifiers should be escaped with backticks
-          assert_includes(result, "`call?`")
+          assert_includes(symbol.symbol, "`call?`")
         end
       end
 
       #: -> void
-      def test_proto_encoder_writes_valid_varint
-        encoder = Proto::Encoder.new
-        encoder.write_varint(150)
-        # 150 = 0x96 0x01 in varint encoding
-        assert_equal("\x96\x01".b, encoder.to_s)
-      end
+      def test_occurrences_have_valid_ranges
+        with_temp_workspace do |workspace_path|
+          File.write(File.join(workspace_path, "example.rb"), <<~RUBY)
+            class Foo
+            end
+          RUBY
 
-      #: -> void
-      def test_proto_encoder_writes_string
-        encoder = Proto::Encoder.new
-        encoder.write_string(1, "test")
-        # Field 1, wire type 2 (length-delimited) = tag 0x0a
-        # Length 4 = 0x04
-        # "test" bytes
-        assert_equal("\x0a\x04test".b, encoder.to_s)
+          output = StringIO.new
+          output.binmode
+          generator = Generator.new(workspace_path, output)
+          generator.generate
+
+          index = Proto::Index.decode(output.string)
+          document = index.documents.first
+
+          refute_empty(document.occurrences)
+          occurrence = document.occurrences.first
+          # Range should have at least 3 elements (line, start_col, end_col)
+          assert(occurrence.range.length >= 3)
+          # First element is the line number (0-based)
+          assert_equal(0, occurrence.range[0])
+        end
       end
 
       private

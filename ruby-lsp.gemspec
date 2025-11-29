@@ -13,12 +13,14 @@ Gem::Specification.new do |s|
   s.homepage = "https://github.com/Shopify/ruby-lsp"
   s.license = "MIT"
 
-  s.files = Dir.glob("lib/**/*.rb") + ["README.md", "VERSION", "LICENSE.txt"] + Dir.glob("static_docs/**/*.md")
+  s.files = Dir.glob("lib/**/*.rb") + Dir.glob("lib/**/*.binpb") + Dir.glob("lib/**/*.proto") +
+            ["README.md", "VERSION", "LICENSE.txt"] + Dir.glob("static_docs/**/*.md")
   s.bindir = "exe"
   s.executables = ["ruby-lsp", "ruby-lsp-check", "ruby-lsp-launcher", "ruby-lsp-test-exec", "ruby-lsp-lsif", "ruby-lsp-scip"]
   s.require_paths = ["lib"]
 
   # Dependencies must be kept in sync with the checks in the extension side on workspace.ts
+  s.add_dependency("google-protobuf", ">= 3.25", "< 5.0")
   s.add_dependency("language_server-protocol", "~> 3.17.0")
   s.add_dependency("prism", ">= 1.2", "< 2.0")
   s.add_dependency("rbs", ">= 3", "< 5")
