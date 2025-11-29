@@ -24,6 +24,8 @@ AllCops:
     - "jekyll/**/*"
     # This a vendored source file that is not a part of our codebase
     - "lib/ruby_lsp/requests/support/package_url.rb"
+    # Generated from scip.proto - uses google-protobuf dynamic types
+    - "lib/ruby_lsp/scip/proto.rb"
 
 Layout/LeadingCommentSpace:
   AllowRBSInlineAnnotation: true
